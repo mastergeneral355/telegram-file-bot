@@ -9,31 +9,36 @@ TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 # ---------------- Handlers ----------------
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Hello! Send me a video URL (YouTube, TikTok, etc.), and I will download it for you.")
+    await update.message.reply_text(
+        "Hello! Send me a video URL (YouTube, TikTok, etc.), "
+        "and I will download it for you."
+    )
 
 async def download_and_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
     await update.message.reply_text("Downloading your video, please wait... ⏳")
 
     try:
-        # Set output filename
         filename = "video.mp4"
         ydl_opts = {
             "outtmpl": filename,
-            "format": "bestvideo+bestaudio/best",
-            "merge_output_format": "mp4"
+            "format": "best[ext=mp4]/best",
+            "merge_output_format": "mp4",
+            "noplaylist": True,
+            "quiet": True,  # suppress extra output
         }
 
-        # Download using yt-dlp
+        # Download video
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        # Send the downloaded file
+        # Send video in Telegram
         await update.message.reply_video(video=open(filename, "rb"))
         os.remove(filename)
 
     except Exception as e:
         await update.message.reply_text(f"Failed to download the video: {e}")
+        print(f"Download error: {e}")
 
 # ---------------- Main ----------------
 
