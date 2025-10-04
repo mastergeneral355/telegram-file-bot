@@ -10,7 +10,7 @@ from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
 # === CONFIG ===
-TOKEN = os.environ.get("8099016535:AAEZI1K6pKGyr1jEeJZqR3eDIKCAU2jhTu0")  # Your token will come from Render environment variable
+TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")  # Your token will come from Render environment variable
 MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024  # 100 MB max per file
 # ==============
 
