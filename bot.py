@@ -1,133 +1,48 @@
-import asyncio
-import tempfile
 import os
-import socket
-import ipaddress
-from urllib.parse import urlparse
-
-import aiohttp
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+import yt_dlp
 
-# === CONFIG ===
-TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")  # Your token will come from Render environment variable
-MAX_DOWNLOAD_BYTES = 100 * 1024 * 1024  # 100 MB max per file
-# ==============
+# Get your token from Render environment variable
+TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
+
+# ---------------- Handlers ----------------
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Hi — send me a direct file URL (http/https) and I'll download it and send it back to you."
-    )
-
-def is_valid_url(url: str) -> bool:
-    try:
-        parsed = urlparse(url)
-        return parsed.scheme in ("http", "https") and parsed.netloc != ""
-    except Exception:
-        return False
-
-def is_private_network(host: str) -> bool:
-    try:
-        for res in socket.getaddrinfo(host, None):
-            ip = res[4][0]
-            ip_obj = ipaddress.ip_address(ip)
-            if (ip_obj.is_private or ip_obj.is_loopback or ip_obj.is_link_local or
-                    ip_obj.is_reserved or ip_obj.is_multicast):
-                return True
-        return False
-    except Exception:
-        return True
+    await update.message.reply_text("Hello! Send me a video URL (YouTube, TikTok, etc.), and I will download it for you.")
 
 async def download_and_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    msg = update.message.text.strip()
-    if msg.startswith("/get"):
-        parts = msg.split(maxsplit=1)
-        if len(parts) < 2:
-            await update.message.reply_text("Usage: /get <direct-file-url>")
-            return
-        url = parts[1].strip()
-    else:
-        url = msg
-
-    if not is_valid_url(url):
-        await update.message.reply_text("That's not a valid http/https URL.")
-        return
-
-    host = urlparse(url).hostname or ""
-    if is_private_network(host):
-        await update.message.reply_text("I cannot download from internal or private network addresses.")
-        return
-
-    await update.message.reply_text("Starting download...")
+    url = update.message.text.strip()
+    await update.message.reply_text("Downloading your video, please wait... ⏳")
 
     try:
-        timeout = aiohttp.ClientTimeout(total=60*30)  # 30 minutes max
-        async with aiohttp.ClientSession(timeout=timeout) as session:
-            async with session.get(url) as resp:
-                if resp.status != 200:
-                    await update.message.reply_text(f"Failed to download. HTTP status {resp.status}.")
-                    return
+        # Set output filename
+        filename = "video.mp4"
+        ydl_opts = {
+            "outtmpl": filename,
+            "format": "bestvideo+bestaudio/best",
+            "merge_output_format": "mp4"
+        }
 
-                content_length = resp.headers.get("Content-Length")
-                if content_length is not None:
-                    try:
-                        content_length = int(content_length)
-                        if content_length > MAX_DOWNLOAD_BYTES:
-                            await update.message.reply_text(
-                                f"File too large ({content_length} bytes). Max allowed: {MAX_DOWNLOAD_BYTES} bytes."
-                            )
-                            return
-                    except ValueError:
-                        pass
+        # Download using yt-dlp
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            ydl.download([url])
 
-                with tempfile.NamedTemporaryFile(delete=False) as tmp:
-                    total = 0
-                    chunk_size = 1024 * 64
-                    while True:
-                        chunk = await resp.content.read(chunk_size)
-                        if not chunk:
-                            break
-                        tmp.write(chunk)
-                        total += len(chunk)
-                        if total > MAX_DOWNLOAD_BYTES:
-                            tmp_name = tmp.name
-                            tmp.close()
-                            os.unlink(tmp_name)
-                            await update.message.reply_text("Download exceeded max allowed size; aborted.")
-                            return
-                    tmp_path = tmp.name
-
-        caption = f"Downloaded from: {url}"
-        with open(tmp_path, "rb") as f:
-            await update.message.reply_document(document=f, filename=os.path.basename(urlparse(url).path) or "file", caption=caption)
-
-        os.unlink(tmp_path)
+        # Send the downloaded file
+        await update.message.reply_video(video=open(filename, "rb"))
+        os.remove(filename)
 
     except Exception as e:
-        await update.message.reply_text(f"Error while downloading or sending: {e}")
+        await update.message.reply_text(f"Failed to download the video: {e}")
 
-async def main():
-    app = ApplicationBuilder().token(TOKEN).build()
-
-    app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CommandHandler("get", download_and_send))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_and_send))
-
-    print("Bot running...")
-    await app.run_polling()
+# ---------------- Main ----------------
 
 if __name__ == "__main__":
-    # Synchronous run for hosting platforms like Render
-    from telegram.ext import ApplicationBuilder
+    app = ApplicationBuilder().token(TOKEN).build()
 
-    app = ApplicationBuilder().token(os.environ["TELEGRAM_BOT_TOKEN"]).build()
-
-    # Add handlers here again if not already added
+    # Add handlers
     app.add_handler(CommandHandler("start", start_cmd))
-    app.add_handler(CommandHandler("get", download_and_send))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_and_send))
 
     print("Bot running...")
-    app.run_polling()  # <-- synchronous, works on Render
-
-
+    app.run_polling()
