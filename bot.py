@@ -2,6 +2,7 @@ import os
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 import yt_dlp
+import asyncio
 
 # Get your token from Render environment variable
 TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
@@ -10,34 +11,48 @@ TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 
 async def start_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "Hello! Send me a video URL (YouTube, TikTok, etc.), "
-        "and I will download it for you."
+        "Hello! Send me a video URL (YouTube, TikTok, etc.), and I will download it for you."
     )
 
 async def download_and_send(update: Update, context: ContextTypes.DEFAULT_TYPE):
     url = update.message.text.strip()
-    await update.message.reply_text("Downloading your video, please wait... ⏳")
+    status_msg = await update.message.reply_text("Starting download... ⏳")
+
+    filename = "video.mp4"
+
+    # Define progress hook for yt-dlp
+    def progress_hook(d):
+        if d['status'] == 'downloading':
+            percent = d.get('_percent_str', '').strip()
+            asyncio.run_coroutine_threadsafe(
+                status_msg.edit_text(f"Downloading: {percent}"), context.application.loop
+            )
+        elif d['status'] == 'finished':
+            asyncio.run_coroutine_threadsafe(
+                status_msg.edit_text("Download finished! Sending video... 📤"), context.application.loop
+            )
+
+    ydl_opts = {
+        "outtmpl": filename,
+        "format": "best[ext=mp4]/best",
+        "merge_output_format": "mp4",
+        "noplaylist": True,
+        "progress_hooks": [progress_hook],
+        "quiet": True,
+    }
 
     try:
-        filename = "video.mp4"
-        ydl_opts = {
-            "outtmpl": filename,
-            "format": "best[ext=mp4]/best",
-            "merge_output_format": "mp4",
-            "noplaylist": True,
-            "quiet": True,  # suppress extra output
-        }
-
-        # Download video
+        # Download using yt-dlp
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
-        # Send video in Telegram
+        # Send the downloaded video
         await update.message.reply_video(video=open(filename, "rb"))
         os.remove(filename)
+        await status_msg.delete()
 
     except Exception as e:
-        await update.message.reply_text(f"Failed to download the video: {e}")
+        await status_msg.edit_text(f"Failed to download the video: {e}")
         print(f"Download error: {e}")
 
 # ---------------- Main ----------------
