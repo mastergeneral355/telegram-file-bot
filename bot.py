@@ -117,8 +117,17 @@ async def main():
     await app.run_polling()
 
 if __name__ == "__main__":
-    import asyncio
+    # Synchronous run for hosting platforms like Render
+    from telegram.ext import ApplicationBuilder
 
-    asyncio.run(main(), debug=False)  # debug=False can prevent unnecessary warnings
+    app = ApplicationBuilder().token(os.environ["TELEGRAM_BOT_TOKEN"]).build()
+
+    # Add handlers here again if not already added
+    app.add_handler(CommandHandler("start", start_cmd))
+    app.add_handler(CommandHandler("get", download_and_send))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, download_and_send))
+
+    print("Bot running...")
+    app.run_polling()  # <-- synchronous, works on Render
 
 
