@@ -119,9 +119,6 @@ async def main():
 if __name__ == "__main__":
     import asyncio
 
-    loop = asyncio.get_event_loop()
-    try:
-        loop.run_until_complete(main())
-    finally:
-        loop.close()
+    asyncio.run(main(), debug=False)  # debug=False can prevent unnecessary warnings
+
 
